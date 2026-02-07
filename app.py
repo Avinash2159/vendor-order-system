@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
-from reportlab.lib.utils import ImageReader
+from fpdf import FPDF
 from datetime import datetime
 import os
 import random
@@ -19,6 +17,83 @@ os.makedirs(PDF_DIR, exist_ok=True)
 DATABASE_FILE = "vendor_orders.db"
 BACKUP_FILE = "Order_Backup.xlsx"  # अभी भी Excel में बैकअप
 LOGO_PATH = "CMS LOGO.jpg"
+
+# ================= PDF GENERATION WITH FPDF =================
+class PDF(FPDF):
+    def header(self):
+        # Logo
+        if os.path.exists(LOGO_PATH):
+            self.image(LOGO_PATH, 10, 8, 30)
+        self.set_font('Arial', 'B', 16)
+        self.cell(0, 10, 'Digital Order System', 0, 1, 'C')
+        self.ln(10)
+
+def generate_pdf(order_data, order_lines):
+    """Generate PDF using FPDF"""
+    pdf = PDF()
+    pdf.add_page()
+    
+    # Order details
+    pdf.set_font('Arial', '', 12)
+    pdf.cell(0, 10, f"Order ID: {order_data['order_id']}", 0, 1)
+    pdf.cell(0, 10, f"Date & Time: {order_data['timestamp']}", 0, 1)
+    pdf.cell(0, 10, f"Vendor: {order_data['vendor']}", 0, 1)
+    pdf.cell(0, 10, f"Campus: {order_data['campus']}", 0, 1)
+    pdf.cell(0, 10, f"Event: {order_data['event']}", 0, 1)
+    pdf.cell(0, 10, f"Rate Type: {order_data['rate_type']}", 0, 1)
+    
+    pdf.ln(10)
+    
+    # Table header
+    pdf.set_font('Arial', 'B', 12)
+    col_widths = [15, 45, 25, 25, 20, 30, 30, 35]
+    headers = ["No", "Category", "H (ft)", "W (ft)", "Qty", "Area", "Rate", "Amount"]
+    
+    for i, header in enumerate(headers):
+        pdf.cell(col_widths[i], 10, header, 1, 0, 'C')
+    pdf.ln()
+    
+    # Table rows
+    pdf.set_font('Arial', '', 10)
+    grand_total = 0
+    
+    for idx, line in enumerate(order_lines, 1):
+        row = [
+            str(idx),
+            line["category"],
+            str(line["height"]),
+            str(line["width"]),
+            str(line["qty"]),
+            str(line["area"]),
+            f"₹{line['rate']}",
+            f"₹{line['amount']}"
+        ]
+        
+        for i, item in enumerate(row):
+            pdf.cell(col_widths[i], 10, item, 1, 0, 'C' if i > 0 else 'L')
+        pdf.ln()
+        grand_total += line["amount"]
+    
+    # Grand total
+    pdf.set_font('Arial', 'B', 12)
+    pdf.cell(sum(col_widths[:-1]), 10, "Grand Total:", 1, 0, 'R')
+    pdf.cell(col_widths[-1], 10, f"₹{grand_total:.2f}", 1, 1, 'C')
+    
+    pdf.ln(15)
+    
+    # Footer
+    pdf.set_font('Arial', '', 12)
+    pdf.cell(0, 10, f"Order Placed By: {order_data['order_by']}", 0, 1)
+    pdf.cell(0, 10, "Approved By: __________________", 0, 1)
+    
+    pdf.ln(10)
+    pdf.set_font('Arial', 'I', 10)
+    pdf.cell(0, 10, "Programme Developed by Mr. Avinash Chandra Agarwal", 0, 0, 'C')
+    
+    # Save PDF
+    pdf_path = os.path.join(PDF_DIR, f"{order_data['order_id']}.pdf")
+    pdf.output(pdf_path)
+    return pdf_path
 
 # ================= SQLite HELPER FUNCTIONS =================
 def get_db_connection():
@@ -414,68 +489,25 @@ if os.path.exists(DATABASE_FILE):
 
             # ================= PDF =================
             if pdf_btn:
-                path = os.path.join(PDF_DIR, f"{oid}.pdf")
-                c = canvas.Canvas(path, pagesize=A4)
-                pw, ph = A4
+                try:
+                    order_data = {
+                        "order_id": oid,
+                        "timestamp": ts,
+                        "vendor": vendor,
+                        "campus": campus,
+                        "event": event,
+                        "rate_type": rate_type,
+                        "order_by": order_by
+                    }
+                    
+                    pdf_path = generate_pdf(order_data, st.session_state.order_lines)
+                    st.session_state.pdf_path = pdf_path
+                    st.success(f"PDF generated successfully!")
+                    
+                except Exception as e:
+                    st.error(f"Error generating PDF: {str(e)}")
 
-                if os.path.exists(LOGO_PATH):
-                    c.drawImage(ImageReader(LOGO_PATH), 40, ph-80, 60, 40)
-
-                c.setFont("Helvetica-Bold", 10)
-                c.drawString(120, ph-30, f"Date & Time: {ts}")
-                c.drawRightString(pw-40, ph-30, f"Order ID: {oid}")
-
-                c.drawString(120, ph-50, f"Vendor: {vendor}")
-                c.drawString(120, ph-65, f"Campus: {campus}")
-                c.drawString(120, ph-80, f"Event: {event}")
-                c.drawString(120, ph-95, f"Rate Type: {rate_type}")
-
-                c.setDash(1, 2)
-                c.line(40, ph-110, pw-40, ph-110)
-                c.setDash()
-
-                y = ph-140
-                headers = ["No", "Category", "H (ft.)", "W (ft.)", "Qty", "Area (sq.ft.)", "Rate (Rs.)", "Amount (Rs.)"]
-                x = [40, 70, 190, 225, 260, 300, 360, 430]
-
-                c.setFont("Helvetica-Bold", 9)
-                for h, xp in zip(headers, x):
-                    c.drawString(xp, y, h)
-
-                c.setDash(1, 2)
-                for xp in x[1:]:
-                    c.line(xp-5, y+5, xp-5, 120)
-                c.setDash()
-
-                y -= 20
-                c.setFont("Helvetica", 9)
-                gt = 0
-                for i, l in enumerate(st.session_state.order_lines, 1):
-                    row = [i, l["category"], l["height"], l["width"], l["qty"], l["area"], l["rate"], l["amount"]]
-                    for v, xp in zip(row, x):
-                        c.drawString(xp, y, str(v))
-                    gt += l["amount"]
-                    y -= 18
-
-                c.setDash(1, 2)
-                c.line(40, y-5, pw-40, y-5)
-                c.setDash()
-
-                c.setFont("Helvetica-Bold", 10)
-                c.drawRightString(pw-40, y-20, f"Grand Total: Rs. {round(gt, 2)}")
-
-                c.setFont("Helvetica", 9)
-                c.drawString(40, 70, f"Order Placed By: {order_by}")
-                c.drawRightString(pw-40, 70, "Approved By: __________________")
-
-                c.setFont("Helvetica-Oblique", 8)
-                c.drawCentredString(pw/2, 40, "Programme Developed by Mr. Avinash Chandra Agarwal")
-
-                c.showPage()
-                c.save()
-                st.session_state.pdf_path = path
-
-        if st.session_state.pdf_path:
+        if st.session_state.pdf_path and os.path.exists(st.session_state.pdf_path):
             with open(st.session_state.pdf_path, "rb") as f:
                 st.download_button(
                     "⬇️ Download PDF",
