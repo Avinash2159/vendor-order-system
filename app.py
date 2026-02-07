@@ -7,6 +7,40 @@ import random
 import time
 import sqlite3
 
+# DATABASE FILE PATH - FIX FOR STREAMLIT CLOUD
+if os.path.exists("vendor_orders.db"):
+    DATABASE_FILE = "vendor_orders.db"
+else:
+    # On Streamlit Cloud, create empty database
+    DATABASE_FILE = "/tmp/vendor_orders.db"
+    
+    # Create database if doesn't exist
+    if not os.path.exists(DATABASE_FILE):
+        conn = sqlite3.connect(DATABASE_FILE)
+        cursor = conn.cursor()
+        
+        # Create empty tables
+        cursor.execute('''CREATE TABLE IF NOT EXISTS categories (category_name TEXT)''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS vendors (vendor_name TEXT)''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS campus (campus_name TEXT)''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS shiv_rates (category_name TEXT, rate REAL)''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS metro_rates (category_name TEXT, rate REAL)''')
+        
+        # Add sample data
+        cursor.execute("INSERT INTO categories (category_name) VALUES ('Banner')")
+        cursor.execute("INSERT INTO categories (category_name) VALUES ('Poster')")
+        cursor.execute("INSERT INTO vendors (vendor_name) VALUES ('Shivnanda')")
+        cursor.execute("INSERT INTO vendors (vendor_name) VALUES ('Metro')")
+        cursor.execute("INSERT INTO campus (campus_name) VALUES ('Main Campus')")
+        cursor.execute("INSERT INTO shiv_rates (category_name, rate) VALUES ('Banner', 100.0)")
+        cursor.execute("INSERT INTO shiv_rates (category_name, rate) VALUES ('Poster', 150.0)")
+        cursor.execute("INSERT INTO metro_rates (category_name, rate) VALUES ('Banner', 120.0)")
+        cursor.execute("INSERT INTO metro_rates (category_name, rate) VALUES ('Poster', 180.0)")
+        
+        conn.commit()
+        conn.close()
+        print("Created sample database on Streamlit Cloud")
+
 st.set_page_config(page_title="Digital Order System", layout="centered")
 st.title("📊 Digital Order System")
 
